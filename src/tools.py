@@ -44,23 +44,19 @@ BUILTIN_TOOLS = [
     {
         "name": "deploy_mcp",
         "description": (
-            "Deploy an OpenAPI spec as an MCP server via Hintas. "
-            "Requires the spec URL and the API's base URL. "
+            "Deploy a Hintas project as an MCP server. "
+            "Requires the project_id (UUID) of an existing Hintas project. "
             "Returns the MCP endpoint URL on success."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "spec_url": {
+                "project_id": {
                     "type": "string",
-                    "description": "URL where the OpenAPI spec is hosted",
-                },
-                "api_base_url": {
-                    "type": "string",
-                    "description": "Base URL of the actual API (e.g., https://api.notion.com)",
+                    "description": "The Hintas project UUID to deploy",
                 },
             },
-            "required": ["spec_url", "api_base_url"],
+            "required": ["project_id"],
         },
     },
     {

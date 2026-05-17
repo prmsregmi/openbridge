@@ -8,7 +8,7 @@ from rich.panel import Panel
 from rich.markdown import Markdown
 
 from src.spec_finder import find_spec, search_github_specs as github_search
-from src.hintas import deploy_mcp as hintas_deploy
+from src.hintas import deploy_project
 from src.mcp_bridge import McpBridge
 from src.tools import BUILTIN_TOOLS
 
@@ -19,9 +19,11 @@ SYSTEM_PROMPT = """You are OpenBridge, an agent that helps users connect to any 
 Your workflow:
 1. When the user describes software they want to integrate, search for its OpenAPI spec using search_apis first.
 2. If search_apis doesn't find it, try search_github_specs.
-3. Once you find a spec, use deploy_mcp with the spec_url and api_base_url.
+3. Once you find a spec, deploy it using deploy_mcp with the Hintas project_id.
 4. After deployment, use connect_mcp with the returned MCP URL.
 5. Once connected, you'll gain new tools from the MCP. Demonstrate one of them to show the integration works.
+
+The user or system will provide the Hintas project_id for deployment. If you find a spec but don't have a project_id, report the spec details and ask the user for the project_id.
 
 Be concise. Show progress. When you discover new tools after connecting, list them briefly and then use one to demonstrate the new capability."""
 
@@ -62,10 +64,15 @@ class Agent:
             return "\n".join(lines)
 
         elif name == "deploy_mcp":
-            result = await hintas_deploy(args["spec_url"], args["api_base_url"])
+            result = await deploy_project(args["project_id"])
             if not result.success:
                 return f"Deployment failed: {result.error}"
-            return f"MCP deployed successfully.\nMCP URL: {result.mcp_url}"
+            return (
+                f"MCP deployed successfully.\n"
+                f"Status: {result.status}\n"
+                f"Project URL: {result.project_url}\n"
+                f"MCP URL: {result.mcp_url}"
+            )
 
         elif name == "connect_mcp":
             self.mcp_bridge = McpBridge(url=args["mcp_url"])

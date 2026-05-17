@@ -42,21 +42,29 @@ BUILTIN_TOOLS = [
         },
     },
     {
-        "name": "deploy_mcp",
+        "name": "create_and_deploy",
         "description": (
-            "Deploy a Hintas project as an MCP server. "
-            "Requires the project_id (UUID) of an existing Hintas project. "
-            "Returns the MCP endpoint URL on success."
+            "Create a Hintas project from an OpenAPI spec URL and deploy it as an MCP server. "
+            "This is a two-step process: creates the project with the spec, then deploys it. "
+            "Returns the MCP endpoint URL on success. Use after finding a spec URL."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "project_id": {
+                "name": {
                     "type": "string",
-                    "description": "The Hintas project UUID to deploy",
+                    "description": "Short lowercase slug for the project (e.g., 'notion-api', 'open-brewery-db')",
+                },
+                "spec_url": {
+                    "type": "string",
+                    "description": "URL of the OpenAPI spec to deploy",
+                },
+                "upstream_url": {
+                    "type": "string",
+                    "description": "Base URL of the actual API (e.g., 'https://api.notion.com')",
                 },
             },
-            "required": ["project_id"],
+            "required": ["name", "spec_url"],
         },
     },
     {
@@ -64,14 +72,14 @@ BUILTIN_TOOLS = [
         "description": (
             "Connect to a deployed MCP server and discover its available tools. "
             "After this succeeds, new tools from the MCP will be available. "
-            "Call this after deploy_mcp returns an MCP URL."
+            "Call this after create_and_deploy returns an MCP URL."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "mcp_url": {
                     "type": "string",
-                    "description": "The MCP endpoint URL returned by deploy_mcp",
+                    "description": "The MCP endpoint URL returned by create_and_deploy",
                 }
             },
             "required": ["mcp_url"],

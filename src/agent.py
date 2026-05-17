@@ -8,7 +8,7 @@ from rich.panel import Panel
 from rich.markdown import Markdown
 
 from src.spec_finder import find_spec, search_github_specs as github_search
-from src.hintas import deploy_project
+from src.hintas import create_project, deploy_project
 from src.mcp_bridge import McpBridge
 from src.tools import BUILTIN_TOOLS
 
@@ -19,11 +19,9 @@ SYSTEM_PROMPT = """You are OpenBridge, an agent that helps users connect to any 
 Your workflow:
 1. When the user describes software they want to integrate, search for its OpenAPI spec using search_apis first.
 2. If search_apis doesn't find it, try search_github_specs.
-3. Once you find a spec, deploy it using deploy_mcp with the Hintas project_id.
+3. Once you find a spec, use create_and_deploy with the spec_url, a short slug name, and the upstream API base URL.
 4. After deployment, use connect_mcp with the returned MCP URL.
 5. Once connected, you'll gain new tools from the MCP. Demonstrate one of them to show the integration works.
-
-The user or system will provide the Hintas project_id for deployment. If you find a spec but don't have a project_id, report the spec details and ask the user for the project_id.
 
 Be concise. Show progress. When you discover new tools after connecting, list them briefly and then use one to demonstrate the new capability."""
 
@@ -63,30 +61,57 @@ class Agent:
                 lines.append(f"- **{r.name}**\n  Spec: {r.spec_url}")
             return "\n".join(lines)
 
-        elif name == "deploy_mcp":
-            result = await deploy_project(args["project_id"])
-            if not result.success:
-                return f"Deployment failed: {result.error}"
+        elif name == "create_and_deploy":
+            # Step 1: Create project with spec
+            project = await create_project(
+                name=args["name"],
+                spec_url=args["spec_url"],
+                upstream_url=args.get("upstream_url", ""),
+            )
+            if not project.success:
+                return f"Project creation failed: {project.error}"
+
+            # Step 2: Deploy
+            deploy = await deploy_project(project.project_id)
+            if not deploy.success:
+                return f"Project created (id: {project.project_id}) but deployment failed: {deploy.error}"
+
             return (
                 f"MCP deployed successfully.\n"
-                f"Status: {result.status}\n"
-                f"Project URL: {result.project_url}\n"
-                f"MCP URL: {result.mcp_url}"
+                f"Project ID: {project.project_id}\n"
+                f"Status: {deploy.status}\n"
+                f"Project URL: {deploy.project_url}\n"
+                f"MCP URL: {deploy.mcp_url}"
             )
 
         elif name == "connect_mcp":
-            self.mcp_bridge = McpBridge(url=args["mcp_url"])
-            try:
-                tools = await self.mcp_bridge.connect()
-                self.dynamic_tools = self.mcp_bridge.to_anthropic_tools()
-                tool_names = [t.name for t in tools]
-                return (
-                    f"Connected to MCP. Discovered {len(tools)} new tools:\n"
-                    + ", ".join(tool_names)
-                    + "\n\nThese tools are now available for use."
-                )
-            except Exception as e:
-                return f"Failed to connect to MCP: {e}"
+            # Retry with backoff — deployment may still be provisioning
+            max_attempts = 5
+            for attempt in range(max_attempts):
+                self.mcp_bridge = McpBridge(url=args["mcp_url"])
+                try:
+                    tools = await self.mcp_bridge.connect()
+                    self.dynamic_tools = self.mcp_bridge.to_anthropic_tools()
+                    tool_names = [t.name for t in tools]
+                    return (
+                        f"Connected to MCP. Discovered {len(tools)} new tools:\n"
+                        + ", ".join(tool_names)
+                        + "\n\nThese tools are now available for use."
+                    )
+                except Exception as e:
+                    try:
+                        await self.mcp_bridge.disconnect()
+                    except Exception:
+                        pass
+                    if attempt < max_attempts - 1:
+                        wait = (attempt + 1) * 5
+                        console.print(
+                            f"  [dim]Server not ready, retrying in {wait}s "
+                            f"(attempt {attempt + 1}/{max_attempts})...[/dim]"
+                        )
+                        await asyncio.sleep(wait)
+                    else:
+                        return f"Failed to connect after {max_attempts} attempts: {e}"
 
         else:
             # Must be a dynamic MCP tool

@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Any
 
+import httpx
 from mcp.client.streamable_http import streamable_http_client
 from mcp import ClientSession
 
@@ -24,11 +25,18 @@ class McpBridge:
 
     async def connect(self) -> list[McpTool]:
         """Connect to MCP server and discover available tools."""
-        self._transport_context = streamable_http_client(self.url)
+        self._http_client = httpx.AsyncClient(verify=False, follow_redirects=True)
+        await self._http_client.__aenter__()
+
+        self._transport_context = streamable_http_client(
+            self.url, http_client=self._http_client
+        )
         try:
-            read_stream, write_stream, _ = await self._transport_context.__aenter__()
+            streams = await self._transport_context.__aenter__()
+            read_stream, write_stream = streams[0], streams[1]
         except Exception:
             self._transport_context = None
+            await self._http_client.__aexit__(None, None, None)
             raise
 
         try:
@@ -73,6 +81,8 @@ class McpBridge:
             await self._session_context.__aexit__(None, None, None)
         if self._transport_context:
             await self._transport_context.__aexit__(None, None, None)
+        if hasattr(self, "_http_client") and self._http_client:
+            await self._http_client.__aexit__(None, None, None)
 
     def to_anthropic_tools(self) -> list[dict]:
         """Convert MCP tools to Anthropic API tool format."""

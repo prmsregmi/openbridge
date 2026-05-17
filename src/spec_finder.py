@@ -32,16 +32,26 @@ async def search_apis_guru(query: str) -> list[SpecResult]:
         info = version_data.get("info", {})
         title = info.get("title", "")
 
-        # Score by matching against provider name, API title, and description
+        # Score by matching against provider name and API title
         match_targets = [provider.lower(), title.lower()]
         best_score = max(
             SequenceMatcher(None, query_lower, t).ratio() for t in match_targets
         )
-        # Boost exact substring matches
-        if query_lower in provider.lower() or query_lower in title.lower():
-            best_score = max(best_score, 0.8)
 
-        if best_score > 0.4:
+        # Boost exact substring matches (full query found in target)
+        if query_lower in provider.lower() or query_lower in title.lower():
+            best_score = max(best_score, 0.85)
+
+        # Check individual words — require majority of query words present
+        query_words = query_lower.split()
+        if len(query_words) > 1:
+            combined = f"{provider.lower()} {title.lower()}"
+            matched_words = sum(1 for w in query_words if w in combined)
+            word_ratio = matched_words / len(query_words)
+            if word_ratio < 0.5:
+                best_score *= 0.3  # Heavy penalty for low word overlap
+
+        if best_score > 0.45:
             scored.append((best_score, api_id, version_data))
 
     scored.sort(key=lambda x: x[0], reverse=True)
